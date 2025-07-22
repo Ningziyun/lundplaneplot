@@ -1,0 +1,2 @@
+histfiles/SM_300k_Hadron.root SM_300k_Hadron SM_300k_Hadron * 
+histfiles/SM_test.root SM_test SM_test * 

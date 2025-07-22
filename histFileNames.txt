@@ -1,0 +1,4 @@
+histfiles/epoch=10(oscar).root epoch=10(oscar) epoch=10(oscar) * 
+#histfiles/epoch=20(oscar).root epoch=20(oscar) epoch=20(oscar) * 
+#histfiles/epoch=100(oscar).root epoch=100(oscar) epoch=100(oscar) * 
+#histfiles/OrignalJets_qcd.root OrignalJets_qcd OrignalJets_qcd * 
