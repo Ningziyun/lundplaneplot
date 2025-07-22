@@ -91,7 +91,13 @@ def loopFile(m_filename, tree, outdir = "histfiles", nImages = 30, minDr = 0.0, 
 
      for cjet in range(len(constit_pt)):
        njet+=1;
-       constituents = [];
+       
+     constituents = [];
+     for j in range(len((constit_pt))):
+       constitTLV = ROOT.TLorentzVector(0,0,0,0);
+       constitTLV.SetPtEtaPhiM((constit_pt)[j], (constit_eta)[j], (constit_phi)[j],0);
+       constitPJ = fastjet.PseudoJet(constitTLV.Px(), constitTLV.Py(), constitTLV.Pz(), constitTLV.E());
+       constituents.append(constitPJ);
       
        """
        # Convert the constituent information into a format that we can use for fastjet (i.e. Pseudojets)
@@ -101,16 +107,6 @@ def loopFile(m_filename, tree, outdir = "histfiles", nImages = 30, minDr = 0.0, 
          constitPJ = fastjet.PseudoJet(constitTLV.Px(), constitTLV.Py(), constitTLV.Pz(), constitTLV.E());
          constituents.append(constitPJ);
        """
-       # Convert the constituent information into a format that we can use for fastjet (i.e. Pseudojets)
-       for j in range(len((constit_pt))):
-         h_constitPt.Fill(constit_pt[j]);
-         h_constitEta.Fill(constit_eta[j]);
-         h_constitPhi.Fill(constit_phi[j]);
-         constitTLV = ROOT.TLorentzVector(0,0,0,0);
-         constitTLV.SetPtEtaPhiM((constit_pt)[j], (constit_eta)[j], (constit_phi)[j],0);
-         constitPJ = fastjet.PseudoJet(constitTLV.Px(), constitTLV.Py(), constitTLV.Pz(), constitTLV.E());
-         constituents.append(constitPJ);
-
 
 
        # Run the jet clustering on the jet constituents, using the antikt algorithm
