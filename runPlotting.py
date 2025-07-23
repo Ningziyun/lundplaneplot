@@ -78,7 +78,8 @@ for i in range(len(mcFiles)):
   if not lundPlane1 or not lundPlane1.InheritsFrom("TH2"):
       print(f"WARNING: Could not load valid TH2 histogram 'lundPlane' from file {mcFiles[i]}")
       continue
-  lundPlane1.GetZaxis().SetRangeUser(0.0, 0.128)
+  #lundPlane1.GetZaxis().SetRangeUser(0.0, 0.128)
+  lundPlane1.GetZaxis().SetRangeUser(0.0, lundPlane1.GetMaximum())
 
 
   lundPlane1.Draw("COLZ");
@@ -95,7 +96,8 @@ for i in range(len(mcFiles)):
   file = ROOT.TFile(mcFiles[i]);
   lundPlane1 = file.Get("lundPlaneKt");
   plotHelper.configureHist2D(lundPlane1)
-  lundPlane1.GetZaxis().SetRangeUser(0.0, 0.128);
+  #lundPlane1.GetZaxis().SetRangeUser(0.0, 0.128);
+  lundPlane1.GetZaxis().SetRangeUser(0.0, lundPlane1.GetMaximum())
   lundPlane1.GetXaxis().SetRangeUser(rangeXLow, rangeXHigh);
   lundPlane1.GetYaxis().SetRangeUser(rangeYLow, rangeYHigh);
   lundPlane1.GetZaxis().SetTitle("#rho(#Delta, #it{k_{t}})");
@@ -137,17 +139,19 @@ for i in range(len(mcFiles)):
     file2 = ROOT.TFile(mcFile2);
 
     lundPlane2 = file2.Get("lundPlane");
+    
 
     for k in range(lundPlane2.GetNbinsX()+1):
       lundPlane2.SetBinContent(0,k,0);
       lundPlane2.SetBinContent(k,0, 0);
-
+    
     lundPlaneKt2 = file2.Get("lundPlaneKt");
     secLundPlane2 = file2.Get("secLundPlane");
     fullLundPlane2 = file2.Get("fullLundPlane");
 
     lundPlane1.Divide(lundPlane2);
-    lundPlane1.GetZaxis().SetRangeUser(0.0, 2.0);
+    lundPlane1.GetZaxis().SetRangeUser(0.0, lundPlane1.GetMaximum());
+    #lundPlane1.GetZaxis().SetRangeUser(0.0, 2.0);
     lundPlane1.Draw("COLZ");
 
     ROOT.gStyle.SetTextSize(0.04);
@@ -158,7 +162,8 @@ for i in range(len(mcFiles)):
     lundPlane1.Multiply(lundPlane2);
     lundPlaneKt1.Divide(lundPlaneKt2);
     plotHelper.configureHist2D(lundPlaneKt1)
-    lundPlaneKt1.GetZaxis().SetRangeUser(0.0, 2.0);
+    #lundPlaneKt1.GetZaxis().SetRangeUser(0.0, 2.0);
+    lundPlaneKt1.GetZaxis().SetRangeUser(0.0, lundPlane1.GetMaximum());    
 
     lundPlaneKt1.GetXaxis().SetRangeUser(rangeXLow, rangeXHigh);
     lundPlaneKt1.GetYaxis().SetRangeUser(rangeYLow, rangeYHigh);
@@ -171,7 +176,7 @@ for i in range(len(mcFiles)):
     AS.myText( 0.40, 0.79, 1, "%s / %s"%(descriptions[j], descriptions[i]), 0.053);
 
     canvas.SaveAs("plots/ljpRatios/Kt%s_%s.pdf"%(outNames[i], outNames[j]));
-    lundPlaneKt1.Multiply(lundPlaneKt2);
+    lundPlaneKt1.Multiply(lundPlaneKt2); 
     canvas.SetLogz(0);
 
 

@@ -98,7 +98,7 @@ def loopFile(m_filename, tree, outdir = "histfiles", nImages = 30, minDr = 0.0, 
    if njet > 0:
      h_lundPlane.Scale(1./njet);
      h_lundPlaneKt.Scale(1./njet);
-     h_jetPt.Scale(1./njet); 
+     h_jetPt.Scale(1./njet);
 
    # Write the histograms to the output file
    newfile.cd()
