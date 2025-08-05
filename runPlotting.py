@@ -163,7 +163,7 @@ for i in range(len(mcFiles)):
     lundPlaneKt1.Divide(lundPlaneKt2);
     plotHelper.configureHist2D(lundPlaneKt1)
     #lundPlaneKt1.GetZaxis().SetRangeUser(0.0, 2.0);
-    lundPlaneKt1.GetZaxis().SetRangeUser(0.0, lundPlane1.GetMaximum());    
+    lundPlaneKt1.GetZaxis().SetRangeUser(0.0, lundPlaneKt1.GetMaximum());    
 
     lundPlaneKt1.GetXaxis().SetRangeUser(rangeXLow, rangeXHigh);
     lundPlaneKt1.GetYaxis().SetRangeUser(rangeYLow, rangeYHigh);
