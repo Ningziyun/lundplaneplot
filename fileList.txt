@@ -2,6 +2,6 @@
 #rootFiles/epoch=20(oscar).root
 #rootFiles/epoch=50(oscar).root
 #rootFiles/epoch=100(oscar).root
-#rootFiles/OriginalJets_qcd.root
-rootFiles/epoch=10(10k).root
-rootFiles/epoch=100(10k).root
+rootFiles/OriginalJets_qcd.root
+#rootFiles/epoch=10(10k).root
+#rootFiles/epoch=100(10k).root

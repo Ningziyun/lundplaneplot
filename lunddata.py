@@ -6,25 +6,22 @@ import math
 import ljpHelpers
 
 
-def loopFile(m_filename, tree, outdir = "histfiles", nImages = 30, minDr = 0.0, maxDr = 10.0, minKt = -1, maxKt = 8, minZ = 0.5, maxZ = 6.5, nBinsKt = 25, nBinsDr = 25, nBinsZ = 40):
+def loopFile(m_filename, tree, outdir = "lundfiles", nImages = 30, minDr = 0.0, maxDr = 10.0, minKt = -1, maxKt = 8, minZ = 0.5, maxZ = 6.5, nBinsKt = 25, nBinsDr = 25, nBinsZ = 40):
    # Set branch addresses and branch pointers
    if (not tree):
      return;
+     
+   if not os.path.exists(outdir):
+     os.makedirs(outdir)
 
    # The output file with the histograms
    newfile = ROOT.TFile.Open(("%s/%s"%(outdir, m_filename)), "RECREATE");
-
-   # A variety of output histograms (defined here, filled later)
-   h_lundPlane = ROOT.TH2F("lundPlane", ";ln(R/#Delta R); ln(1/z)", nBinsDr, minDr, maxDr, nBinsZ, minZ, maxZ);
-   h_lundPlaneKt = ROOT.TH2F("lundPlaneKt", ";ln(R/#Delta R); ln(#it{k_{t}}/GeV)", nBinsDr, minDr, maxDr, nBinsKt, minKt, maxKt);
-   h_jetPt = ROOT.TH1F("jetPt", ";p_{T} [GeV]", 500, 0, 1000);
-   h_jetM = ROOT.TH1F("jetM", ";p_{T} [GeV]", 300, 0, 300);
-   h_jetEta = ROOT.TH1F("jetEta", ";p_{T} [GeV]", 500, -5, 5);
-   h_jetPhi = ROOT.TH1F("jetPhi", ";p_{T} [GeV]", 500, -3.14, 3.14);
-   h_constitPt = ROOT.TH1F("constitPt", ";p_{T} [GeV]", 500, 0, 5000);
-   h_constitEta = ROOT.TH1F("constitEta", ";p_{T} [GeV]", 500, -5, 5);
-   h_constitPhi = ROOT.TH1F("constitPhi", ";p_{T} [GeV]", 500, -3.14, 3.14);
-
+   # 输出 TTree 和变量
+   lundTree = ROOT.TTree("lundTree", "Jet declustering kt and deltaR")
+   kt_vec = ROOT.std.vector('float')()
+   deltaR_vec = ROOT.std.vector('float')()
+   lundTree.Branch("kt", kt_vec)
+   lundTree.Branch("deltaR", deltaR_vec)
 
    # Index for how many jets have been analyzed
    njet = 0;
@@ -53,9 +50,6 @@ def loopFile(m_filename, tree, outdir = "histfiles", nImages = 30, minDr = 0.0, 
 
        # Convert the constituent information into a format that we can use for fastjet (i.e. Pseudojets)
        for j in range(len((constit_pt))):
-         h_constitPt.Fill(constit_pt[j]);
-         h_constitEta.Fill(constit_eta[j]);
-         h_constitPhi.Fill(constit_phi[j]);
          constitTLV = ROOT.TLorentzVector(0,0,0,0);
          constitTLV.SetPtEtaPhiM((constit_pt)[j], (constit_eta)[j], (constit_phi)[j],0);
          constitPJ = fastjet.PseudoJet(constitTLV.Px(), constitTLV.Py(), constitTLV.Pz(), constitTLV.E());
@@ -70,48 +64,31 @@ def loopFile(m_filename, tree, outdir = "histfiles", nImages = 30, minDr = 0.0, 
      if not inclusiveJets10:
        continue
 
-     # Save a histogram with the jet pT. This is useful for debugging our input files.
-     h_jetPt.Fill(inclusiveJets10[0].pt());
-     h_jetM.Fill(inclusiveJets10[0].m());
-     h_jetEta.Fill(inclusiveJets10[0].eta());
-     h_jetPhi.Fill(inclusiveJets10[0].phi());
 
      # Recluster the jets using the Cambridge-Aachen algorithm
-     '''
-     allConstits = inclusiveJets10[0].constituents()
-     '''
      allConstits = list(inclusiveJets10[0].constituents())
+
      #allConstitAK = ak.from_iter(allConstits)
      cs_ca = fastjet.ClusterSequence(allConstits, fastjet.JetDefinition1Param(fastjet.cambridge_algorithm, 10.0));
      myJet_ca = fastjet.sorted_by_pt(cs_ca.inclusive_jets(1.0));
 
      lundPlane = ljpHelpers.jet_declusterings(inclusiveJets10[0]);
 
-
      for k in range(len(lundPlane)):
        # Fill the LJP with the declustered information
-       if(lundPlane[k].delta_R > 0 and lundPlane[k].z > 0):
-         h_lundPlane.Fill(math.log(1./lundPlane[k].delta_R), math.log(1./lundPlane[k].z));         
-         h_lundPlaneKt.Fill(math.log(1./lundPlane[k].delta_R), math.log(lundPlane[k].kt));         
+       if(lundPlane[k].delta_R > 0 and lundPlane[k].z > 0):       
+         deltaR_vec.push_back(lundPlane[k].delta_R)
+         kt_vec.push_back(lundPlane[k].kt)
 
-   # Normalize by the number of jets that have been used
-   if njet > 0:
-     h_lundPlane.Scale(1./njet);
-     h_lundPlaneKt.Scale(1./njet);
-     h_jetPt.Scale(1./njet);
+     if len(kt_vec) > 0:
+        lundTree.Fill()
+        kt_vec.clear()
+        deltaR_vec.clear()
+      # Normalize by the number of jets that have been used
 
    # Write the histograms to the output file
    newfile.cd()
-   h_lundPlane.Write();
-   h_lundPlaneKt.Write();
-   h_jetPt.Write();
-   h_jetM.Write();
-   h_jetEta.Write();
-   h_jetPhi.Write();
-   h_constitPt.Write();
-   h_constitEta.Write();
-   h_constitPhi.Write();
-
+   lundTree.Write()
    newfile.Close();
 
 
