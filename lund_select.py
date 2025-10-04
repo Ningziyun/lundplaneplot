@@ -1,26 +1,42 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Read two jagged branches from a ROOT TTree, apply:
-  - shuffle  : per-jet permutation with pair alignment
-  - top10    : keep jets with >=10 emissions, then slice [:10]
-  - both     : shuffle then top10
+Read two jagged branches from a ROOT TTree, apply composable operations:
 
-THEN write them back using **PyROOT** as EXACTLY TWO branches:
-  - log_kt
-  - log_1_over_deltaR
+  - shuffle    : per-jet permutation with pair alignment
+  - top10      : keep jets with >=10 emissions, then slice [:10]
+  - both       : expands to shuffle + top10
+  - swap       : swap the two branches' DATA on output (names follow default unless overridden)
+  - swapnames  : keep DATA as-is, only swap the OUTPUT NAMES (aliases)
 
-Usage examples -------------- 
-python lund_select.py --in rootFiles/log_kt_deltaR.root --out shuffled.root --mode shuffle 
-python lund_select.py --in rootFiles/log_kt_deltaR.root --out top10.root --mode top10 
-python lund_select.py --in rootFiles/log_kt_deltaR.root --out both.root --mode both --seed 123
+Pipeline order (deterministic when composing):
+  shuffle -> top10 -> swap(data) -> swapnames(names)
+
+THEN write them back using **PyROOT** as EXACTLY TWO branches.
+By default, the output branch order follows the input order,
+unless explicitly overridden with --out_b1 / --out_b2.
+
+Usage examples
+--------------
+# single ops
+python lund_select.py --in rootFiles/log_kt_deltaR.root --out shuffled.root  --mode shuffle --seed 42
+python lund_select.py --in rootFiles/log_kt_deltaR.root --out top10.root     --mode top10
+python lund_select.py --in rootFiles/log_kt_deltaR.root --out both.root      --mode both --seed 123
+python lund_select.py --in rootFiles/log_kt_deltaR.root --out swapped.root   --mode swap
+python lund_select.py --in rootFiles/log_kt_deltaR.root --out swappedn.root  --mode swapnames
+
+# compose multiple modes (order is fixed as above)
+python lund_select.py --in rootFiles/log_kt_deltaR.root --out shuffled.root  --mode shuffle --seed 42 --mode swap
+python lund_select.py --in rootFiles/log_kt_deltaR.root --out top10.root     --mode top10 --mode swap
+python lund_select.py --in root.root --out out.root --mode shuffle --mode top10 --mode swapnames
+python lund_select.py --in root.root --out out.root --mode both --mode swap
 
 We explicitly create std::vector<float> branches via PyROOT,
 so NO auxiliary count/offset branches will appear.
 """
 
 import argparse
-from typing import Optional
+from typing import Optional, List
 
 import numpy as np
 import awkward as ak
@@ -67,16 +83,7 @@ def read_branches(root_path: str, tree_name: str, in_b1: str, in_b2: str):
 # Core ops
 # ---------------------------
 def op_shuffle(a1: ak.Array, a2: ak.Array, seed: Optional[int] = None):
-    """
-    Randomly permute emissions WITHIN each jet using the SAME permutation
-    for both arrays so that pairs (a1[i], a2[i]) remain aligned.
-
-    Implementation:
-      - Generate a random key per emission (flat)
-      - Unflatten keys to jagged by counts
-      - argsort(keys, axis=1) => per-jet permutation indices
-      - Apply the same permutation to both arrays
-    """
+    """Randomly permute emissions within each jet while keeping (a1, a2) pairs aligned."""
     rng = np.random.default_rng(seed)
     counts = ak.num(a1)
     keys_flat = rng.random(int(ak.sum(counts)))
@@ -86,9 +93,7 @@ def op_shuffle(a1: ak.Array, a2: ak.Array, seed: Optional[int] = None):
 
 
 def op_top10(a1: ak.Array, a2: ak.Array):
-    """
-    Keep only jets with >=10 emissions and slice to the first 10 emissions.
-    """
+    """Keep only jets with >=10 emissions and slice to the first 10 emissions."""
     n = ak.num(a1)
     mask = n >= 10
     return a1[mask][:, :10], a2[mask][:, :10]
@@ -102,17 +107,12 @@ def write_with_pyroot(
     tree_name: str,
     a1: ak.Array,
     a2: ak.Array,
-    out_b1: str = "log_kt",
-    out_b2: str = "log_1_over_deltaR",
+    out_b1: str,
+    out_b2: str,
 ):
     """
-    Write EXACTLY TWO branches using PyROOT as std::vector<float>:
-      - out_b1
-      - out_b2
-
-    Notes:
-      * We loop over jets; for each jet, we fill vector<float> with emissions.
-      * Awkward arrays are converted to Python lists per entry for simplicity.
+    Write EXACTLY TWO branches using PyROOT as std::vector<float>.
+    Output branch names are taken from arguments.
     """
     # Ensure dtype float32 for compactness and consistency
     a1_32 = ak.values_astype(a1, np.float32)
@@ -126,12 +126,11 @@ def write_with_pyroot(
     v1 = ROOT.std.vector('float')()
     v2 = ROOT.std.vector('float')()
 
-    # Bind branches (address must remain valid during Fill)
+    # Bind branches
     t.Branch(out_b1, v1)
     t.Branch(out_b2, v2)
 
-    # Iterate over entries (jets)
-    # Convert to list-of-lists to avoid awkward-to-C++ overhead in the loop
+    # Convert to list-of-lists for efficiency in Python→C++ loop
     list1 = ak.to_list(a1_32)
     list2 = ak.to_list(a2_32)
 
@@ -139,19 +138,14 @@ def write_with_pyroot(
         raise RuntimeError("Internal error: number of jets mismatch after processing.")
 
     for x1, x2 in zip(list1, list2):
-        # Clear vectors
         v1.clear()
         v2.clear()
-        # Fill vectors
-        # (x1, x2) are Python lists of floats for this jet (variable length)
         for val in x1:
             v1.push_back(float(val))
         for val in x2:
             v2.push_back(float(val))
-        # Fill one entry
         t.Fill()
 
-    # Write and close
     fout.Write()
     fout.Close()
 
@@ -161,14 +155,21 @@ def write_with_pyroot(
 # ---------------------------
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Shuffle/truncate two jagged branches and write EXACTLY TWO branches using PyROOT."
+        description="Compose shuffle/top10/swap/swapnames and write EXACTLY TWO branches via PyROOT."
     )
     p.add_argument("--in", dest="in_path", required=True,
                    help="Input ROOT file (e.g., inputFiles/log_kt_deltaR.root).")
     p.add_argument("--out", dest="out_path", required=True,
                    help="Output ROOT file.")
-    p.add_argument("--mode", choices=["shuffle", "top10", "both"], required=True,
-                   help="Operation to perform.")
+
+    # Now repeatable: use --mode multiple times (e.g. --mode shuffle --mode top10)
+    p.add_argument("--mode", action="append",
+                   choices=["shuffle", "top10", "both", "swap", "swapnames"],
+                   required=True,
+                   help=("Repeatable. Compose multiple modes. "
+                         "'both' expands to shuffle+top10. "
+                         "Pipeline order is shuffle -> top10 -> swap -> swapnames."))
+
     p.add_argument("--tree_name", default="auto",
                    help="TTree name; use 'auto' to detect the first TTree.")
 
@@ -178,54 +179,93 @@ def parse_args():
     p.add_argument("--in_b2", default="log_1_over_deltaR",
                    help="Input second branch name (default: 'log_1_over_deltaR').")
 
-    # Output branch names (what you want in the new file)
-    # Defaults enforce the exact two names you asked for:
-    p.add_argument("--out_b1", default="log_kt",
-                   help="Output first branch name (default: 'log_kt').")
-    p.add_argument("--out_b2", default="log_1_over_deltaR",
-                   help="Output second branch name (default: 'log_1_over_deltaR').")
+    # Output branch names (follow input order by default)
+    p.add_argument("--out_b1", default=None,
+                   help="Output first branch name (default: same as in_b1; or swapped by swap/swapnames if not overridden).")
+    p.add_argument("--out_b2", default=None,
+                   help="Output second branch name (default: same as in_b2; or swapped by swap/swapnames if not overridden).")
 
     p.add_argument("--seed", type=int, default=None,
-                   help="Random seed for shuffling (for reproducibility).")
+                   help="Random seed for shuffling (only used if 'shuffle' is selected).")
     return p.parse_args()
+
+
+def _expand_modes(modes_list: List[str]) -> List[str]:
+    """Expand 'both' into ['shuffle','top10'] and deduplicate while preserving pipeline order."""
+    selected = set(modes_list)
+    if "both" in selected:
+        selected.update({"shuffle", "top10"})
+    # Pipeline order enforced here
+    pipeline = ["shuffle", "top10", "swap", "swapnames"]
+    return [m for m in pipeline if m in selected]
 
 
 def main():
     args = parse_args()
 
-    # Read
+    # Read input branches
     a1, a2, tname = read_branches(args.in_path, args.tree_name, args.in_b1, args.in_b2)
 
-    # Apply operations
-    if args.mode == "shuffle":
-        a1_out, a2_out = op_shuffle(a1, a2, seed=args.seed)
-    elif args.mode == "top10":
-        a1_out, a2_out = op_top10(a1, a2)
-    else:  # both
-        a1_tmp, a2_tmp = op_shuffle(a1, a2, seed=args.seed)
-        a1_out, a2_out = op_top10(a1_tmp, a2_tmp)
+    # Expand & order modes
+    modes = _expand_modes(args.mode)
 
-    # Resolve output tree name
+    # --- Apply DATA transforms in fixed pipeline order ---
+    a1_out, a2_out = a1, a2
+    applied = []
+
+    if "shuffle" in modes:
+        a1_out, a2_out = op_shuffle(a1_out, a2_out, seed=args.seed)
+        applied.append("shuffle")
+
+    if "top10" in modes:
+        a1_out, a2_out = op_top10(a1_out, a2_out)
+        applied.append("top10")
+
+    if "swap" in modes:
+        a1_out, a2_out = a2_out, a1_out
+        applied.append("swap(data)")
+
+    # --- Resolve OUTPUT NAMES ---
+    # Defaults follow input order; may be swapped depending on modes and whether user provided names.
+    out_b1_default = args.in_b1
+    out_b2_default = args.in_b2
+
+    if args.out_b1 is None and args.out_b2 is None:
+        # If swapnames is present, it dictates swapping names (even if swap also present).
+        # Else if only swap is present, keep names synced with data by swapping names too.
+        if "swapnames" in modes:
+            out_b1_default, out_b2_default = out_b2_default, out_b1_default
+            applied.append("swapnames(names)")
+        elif "swap" in modes:
+            out_b1_default, out_b2_default = out_b2_default, out_b1_default
+            applied.append("names_follow_data")
+
+    out_b1 = args.out_b1 if args.out_b1 is not None else out_b1_default
+    out_b2 = args.out_b2 if args.out_b2 is not None else out_b2_default
+
+    # Resolve tree name
     resolved_tree = tname if args.tree_name == "auto" else args.tree_name
 
-    # WRITE with PyROOT: exactly two branches (no n<name> auxiliaries)
+    # Write output
     write_with_pyroot(
         args.out_path,
         resolved_tree,
         a1_out,
         a2_out,
-        out_b1=args.out_b1,
-        out_b2=args.out_b2,
+        out_b1=out_b1,
+        out_b2=out_b2,
     )
 
     # Report
     n_in = len(a1)
     n_out = len(a1_out)
-    print(f"[OK] Mode={args.mode}. Input jets: {n_in} -> Output jets: {n_out}.")
-    if args.mode in ("top10", "both"):
+    print(f"[OK] Modes={args.mode} -> Applied={modes} ({', '.join(applied) if applied else 'none'}).")
+    print(f"     Input jets: {n_in} -> Output jets: {n_out}.")
+    if "top10" in modes:
         nlen = ak.to_numpy(ak.num(a1_out))
         assert np.all(nlen == 10), "All output jets should have exactly 10 emissions."
         print("[INFO] All kept jets have exactly 10 emissions.")
+    print(f"[INFO] Output branches: '{out_b1}' (first), '{out_b2}' (second) in tree '{resolved_tree}'.")
 
 
 if __name__ == "__main__":
